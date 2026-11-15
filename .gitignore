@@ -1,0 +1,33 @@
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 密钥与本地配置（切勿提交）
+.env
+.env.*
+!.env.example
+
+# 运行期生成的数据（由 seed_all_large() 重建，无需入库）
+# data/
+
+# 日志
+*.log
+logs/
+
+# IDE / 系统文件
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 构建产物
+build/
+dist/
+*.egg-info/
