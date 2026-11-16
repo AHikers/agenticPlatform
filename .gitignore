@@ -14,9 +14,10 @@ __pycache__/
 .env.*
 !.env.example
 
-# 日志
+# 日志与运行期评测产物
 *.log
 logs/
+data/eval/
 
 # IDE / 系统文件
 .idea/

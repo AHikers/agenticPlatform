@@ -1,0 +1,11 @@
+# Streamlit 运行配置（端口由容器启动参数 --server.port 覆盖）
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true
+# 关闭文件监听，容器内代码不会变更，可减少无用 CPU/内存开销
+fileWatcherType = "none"
+
+[runner]
+fastReruns = true

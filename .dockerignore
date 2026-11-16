@@ -1,0 +1,27 @@
+# 构建上下文排除项：避免把本地虚拟环境、密钥和运行期文件打进镜像
+.venv/
+venv/
+env/
+
+__pycache__/
+*.py[cod]
+*.so
+
+.env
+.env.*
+!.env.example
+
+.git/
+.gitignore
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 运行期产物：不进入镜像，容器内自动重建
+data/logs/
+data/eval/
+*.log
+
+Dockerfile
+.dockerignore
