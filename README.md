@@ -138,9 +138,11 @@ python eval_accuracy.py --ids A01,A08
 - 向量检索使用 Chroma 默认嵌入模型 `all-MiniLM-L6-v2`，首次运行会下载约 83MB 模型到 `~/.cache/chroma`
 - `insert_data()` 是纯插入、无幂等保护，请勿重复执行 seed，否则数据会叠加
 
+## 生产环境需改造为
+改造顺序建议：① SQLite → PostgreSQL/MySQL；② Chroma 本地模式 → 托管向量库（如阿里云 DashVector、Milvus）；③ Whoosh → OpenSearch/ES；④ 把 Agent 抽成 FastAPI 接口，Streamlit 只做前端；⑤ 加请求队列与限流（单次查询可能 2~3 分钟）。
+
 ## 已知限制
 
 - SQLite、Whoosh、Chroma 均为本地文件模式，仅支持单进程运行，不可多副本横向扩展
-- `main.py` 每次启动都会重新灌数据，生产环境应改为独立的一次性初始化任务
 - 默认嵌入模型偏英文，中文语义检索效果有限；如需更好效果应替换为中文/多语言嵌入模型并重建索引
 - 大模型单次查询最长可能跑满 20 轮，耗时与 token 消耗较高，需要按场景调整轮数上限
