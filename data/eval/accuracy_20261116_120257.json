@@ -1,0 +1,45 @@
+{
+  "summary": {
+    "total": 2,
+    "correct": 2,
+    "accuracy": 1.0,
+    "avg_latency_sec": 5.0,
+    "avg_rounds": 2.0,
+    "api_failures": 0
+  },
+  "results": [
+    {
+      "id": "A01",
+      "type": "结构化-计数",
+      "question": "公司目前一共有多少名员工？",
+      "expected": [
+        [
+          "100"
+        ]
+      ],
+      "answer": "根据公司数据库的统计，目前公司一共有 **100名** 员工。",
+      "passed": true,
+      "missing": [],
+      "rounds": 2,
+      "latency_sec": 5.15,
+      "api_available": true
+    },
+    {
+      "id": "A08",
+      "type": "政策-关键词",
+      "question": "报销需要在费用发生后多少天内提交？",
+      "expected": [
+        [
+          "30天",
+          "三十天"
+        ]
+      ],
+      "answer": "根据公司**报销流程规范**，报销需要在**费用发生后30天内**提交。\n\n此外，该规范还提到：\n- 单笔超过5000元的报销需部门经理审批\n- 差旅费标准：一线城市住宿不超过600元/晚，二线城市不超过400元/晚",
+      "passed": true,
+      "missing": [],
+      "rounds": 2,
+      "latency_sec": 4.85,
+      "api_available": true
+    }
+  ]
+}
