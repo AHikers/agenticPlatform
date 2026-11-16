@@ -13,7 +13,7 @@ KEYWORD_INDEX_DIR = os.path.join(DATA_DIR, "keyword_index")
 
 DB_PATH = os.path.join(DB_DIR, "enterprise.db")
 
-LLM_API_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
+LLM_API_KEY = os.environ.get("DASHSCOPE_API_KEY", "").strip()
 LLM_BASE_URL = os.environ.get("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 LLM_MODEL = os.environ.get("DASHSCOPE_MODEL", "qwen3.6-plus")
 

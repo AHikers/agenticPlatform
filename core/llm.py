@@ -4,6 +4,14 @@ from typing import List, Dict
 from openai import OpenAI
 from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 
+# 启动自检：密钥缺失时给出可执行的提示，避免只看到 SDK 的 "Missing credentials"
+if not LLM_API_KEY:
+    raise RuntimeError(
+        "未检测到 DASHSCOPE_API_KEY。\n"
+        "  本地运行：在项目根目录 .env 中设置 DASHSCOPE_API_KEY=sk-xxx\n"
+        "  Railway：在目标服务的 Variables 中添加该变量，确认与本服务/当前环境一致后重新部署"
+    )
+
 
 class LLMClient:
     def __init__(self):
