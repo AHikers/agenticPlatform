@@ -22,7 +22,8 @@ def main():
         print()
 
     print("\n[*] 正在初始化数据...")
-    seed_all_large()
+    # 初始化数据库--只有首次需要执行
+    # seed_all_large()
 
     agent = AgenticSearchAgent()
 

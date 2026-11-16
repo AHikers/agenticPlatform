@@ -1,3 +1,8 @@
+# Agent 核心模块：多轮决策循环 + 13 个工具 + 本地降级兜底
+# 关键设计：
+#   - 工具定义用 OpenAI Function Calling 的 JSON Schema 格式，直接喂给 LLM
+#   - messages 按 OpenAI 工具协议拼接：assistant(tool_calls) → tool(结果) → 下一轮 assistant
+#   - 当 LLM 报错/不可用时，自动降级到 _local_search（规则式意图识别 + 本地引擎直查）
 from __future__ import annotations
 import json
 from datetime import datetime, timedelta
@@ -12,6 +17,9 @@ from engines.enterprise_sdk import EnterpriseSDK
 from config import MAX_SEARCH_ROUNDS
 
 
+# System Prompt 模板（运行时用 _build_system_prompt 替换日期占位符）
+# 包含 3 段：角色与工作方式 / 意图路由规则 / 关键词提取规则
+# 意图路由规则是给模型的"必看速查表"，防止它选错数据源
 SYSTEM_PROMPT_TEMPLATE = """你是一个智能企业搜索助手。你拥有多个搜索工具来帮助用户找到信息。
 
 【当前日期: {current_date}】
@@ -81,18 +89,39 @@ SYSTEM_PROMPT_TEMPLATE = """你是一个智能企业搜索助手。你拥有多�
 
 
 class AgenticSearchAgent:
-    def __init__(self):
-        self.llm = LLMClient()
-        self.logger = Logger()
-        self.db = DatabaseEngine()
-        self.vector_db = VectorDBEngine()
-        self.keyword_search = KeywordSearchEngine()
-        self.code_search = CodeSearchEngine()
-        self.enterprise_sdk = EnterpriseSDK()
+    """Agent 主循环：把 LLM 的工具调用决策映射到本地引擎的统一入口。
 
+    典型用法：
+        agent = AgenticSearchAgent()
+        answer = agent.search("公司里薪资最高的员工是谁？")
+        # 或带完整 Trace（前端展示 / 评测用）
+        trace  = agent.search_with_trace("技术架构评审改了什么？")
+    """
+
+    def __init__(self):
+        # 所有引擎在构造函数中一次性初始化（SQLite / Chroma / Whoosh 都是本地文件模式，打开连接成本低）
+        self.llm = LLMClient()
+        self.logger = Logger()                  # 单例 Logger，全局共用
+        self.db = DatabaseEngine()              # SQLite 结构化数据
+        self.vector_db = VectorDBEngine()       # 向量语义检索
+        self.keyword_search = KeywordSearchEngine()  # BM25 全文检索
+        self.code_search = CodeSearchEngine()   # 代码仓库检索
+        self.enterprise_sdk = EnterpriseSDK()   # 模拟企业系统 API（HR/财务/项目/Wiki）
+
+        # 13 个工具的 JSON Schema，直接作为 chat.completions.create(tools=...) 的入参
         self.tools = self._define_tools()
 
     def _define_tools(self) -> list[dict]:
+        """返回 OpenAI Function Calling 格式的工具描述列表。
+
+        共 13 个工具，分 6 类：
+          SQL 结构化    database_search / database_sql / database_schema
+          向量语义      vector_search / vector_info
+          关键词全文    keyword_search / keyword_info
+          代码仓库      code_search / code_read / code_list
+          企业系统      enterprise_call / enterprise_systems
+          日志自省      log_search
+        """
         return [
             {
                 "type": "function",
@@ -282,6 +311,12 @@ class AgenticSearchAgent:
         ]
 
     def _execute_tool(self, tool_name: str, arguments: dict) -> str:
+        """根据 tool_name 把 arguments 路由到对应引擎的方法，返回 JSON 字符串。
+
+        所有分支共享一条 try/except：任何异常都不往上抛，而是包装成
+        {"error": "..."} 返回给 LLM。这样即使某个工具炸了，Agent 还能
+        继续换下一个工具，不会整条链路中断。
+        """
         try:
             if tool_name == "database_search":
                 return self.db.search(
@@ -348,6 +383,11 @@ class AgenticSearchAgent:
             return json.dumps({"error": f"Tool execution error: {str(e)}"}, ensure_ascii=False)
 
     def _build_system_prompt(self) -> str:
+        """替换 SYSTEM_PROMPT_TEMPLATE 中的时间占位符。
+
+        目的：让模型把"本周/本月/最近"理解成真实的日期区间，而不是模糊词。
+        这对财务/项目类跨时间查询至关重要——否则"本月支付情况"会变成全库扫描。
+        """
         now = datetime.now()
         current_date = now.strftime("%Y-%m-%d")
         weekday = now.strftime("%A")
@@ -371,6 +411,13 @@ class AgenticSearchAgent:
         )
 
     def search(self, question: str, verbose: bool = True) -> str:
+        """多轮 Agent 主循环：每轮让 LLM 输出 tool_calls，执行后把结果回填 messages。
+
+        循环终止有三种情况：
+          1. LLM 不再返回 tool_calls → 认为信息足够，直接用其 content 作为最终答案
+          2. LLM 返回的 content 看起来像 API 错误 → 降级到 _local_search（规则式本地搜索）
+          3. 跑满 MAX_SEARCH_ROUNDS 轮 → 追加一条强制收敛的 user prompt，再让 LLM 生成答案
+        """
         messages = [
             {"role": "system", "content": self._build_system_prompt()},
             {"role": "user", "content": question}
@@ -441,6 +488,13 @@ class AgenticSearchAgent:
         return final_answer
 
     def search_with_trace(self, question: str) -> dict:
+        """search 的带 Trace 版本，返回完整的轮次记录字典（供 Streamlit 前端展开、eval 脚本统计）。
+
+        返回结构：
+          question / timestamp / system_prompt / api_available
+          rounds[]: 每轮含 llm_raw_response / llm_text_content / tool_calls[] / is_final
+          final_answer / total_rounds
+        """
         trace = {
             "question": question,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -525,6 +579,14 @@ class AgenticSearchAgent:
         return trace
 
     def search_stream(self, question: str):
+        """search 的流式版本（生成器），Streamlit 前端逐块 yield 渲染。
+
+        yield 的 step 类型：
+          init       → system_prompt 与问题
+          tool_call  → 某一次工具调用的入参与结果
+          final      → 最终答案
+          fallback   → API 不可用时触发降级
+        """
         yield {
             "step": "init",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -612,6 +674,11 @@ class AgenticSearchAgent:
         }
 
     def _local_search_with_trace(self, question: str, trace: dict) -> str:
+        """LLM 不可用时的降级搜索（带 trace 版本）：jieba 分词 → 规则式意图识别 → 各引擎直查。
+
+        降级路径故意走"无 LLM"的硬编码分支，以保证在 API 挂掉时仍能返回有意义的业务数据
+        （主要依赖 enterprise_sdk 里的模拟系统数据，而非 LLM 生成）。
+        """
         try:
             import jieba
             keywords = list(jieba.cut_for_search(question.replace("?", "").replace("？", "")))
@@ -705,6 +772,12 @@ class AgenticSearchAgent:
         return "\n".join(answer_parts)
 
     def _is_api_error(self, content: str) -> bool:
+        """判断 LLM 返回的 content 是否是一条包装过的 API 错误消息。
+
+        触发条件：content 能被解析成 JSON，且 dict 中含 "error" 字段，
+        error 文本包含 connection / timeout / api / key / auth / unauthorized 等关键词。
+        命中即让主循环走降级路径。
+        """
         if not content:
             return False
         try:
@@ -717,6 +790,7 @@ class AgenticSearchAgent:
         return False
 
     def _local_search(self, question: str, verbose: bool = True) -> str:
+        """降级搜索的 verbose 版本（CLI 用）：流程同 _local_search_with_trace，但把每一步打到 stdout。"""
         if verbose:
             print(f"\n{'='*60}")
             print(f"🔍 本地搜索模式: 搜索所有本地数据源")
@@ -915,6 +989,15 @@ class AgenticSearchAgent:
         return answer
 
     def _build_messages_summary(self, messages: list[dict]) -> list[dict]:
+        """把 messages 列表压缩成适合前端展示的摘要。
+
+        每条按 role 区分处理：
+          system / user / tool → 只保留 content 与 200~300 字预览
+          assistant 且含 tool_calls → 展开成 tool_info 列表（工具名+参数），预览写成"调用 N 个工具: [...]"
+          assistant 纯文本 → 保留 content 与预览
+
+        Streamlit 前端用这个摘要渲染"消息上下文"面板。
+        """
         summary = []
         for i, msg in enumerate(messages):
             role = msg.get("role", "unknown")
@@ -967,6 +1050,11 @@ class AgenticSearchAgent:
         return summary
 
     def _detect_intent(self, question: str) -> str:
+        """基于关键词的规则式意图识别（降级路径用）。
+
+        优先级：finance > hr > project（因为财务类关键词最具体，最容易先命中）。
+        三个分支的识别结果直接决定降级搜索时走哪个 enterprise_sdk 调用。
+        """
         finance_keywords = {"支付", "付款", "收款", "交易", "流水", "账单", "对账", "结算",
                            "收入", "支出", "到账", "转账", "报销", "发票", "预算", "费用",
                            "财务", "金额", "款项", "资金", "成本"}

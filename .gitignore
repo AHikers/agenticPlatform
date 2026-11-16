@@ -14,9 +14,6 @@ __pycache__/
 .env.*
 !.env.example
 
-# 运行期生成的数据（由 seed_all_large() 重建，无需入库）
-# data/
-
 # 日志
 *.log
 logs/

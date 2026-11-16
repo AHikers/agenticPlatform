@@ -51,7 +51,7 @@
 │  ├─ keyword_search.py    Whoosh 全文索引 + jieba 分词（BM25）
 │  ├─ code_search.py       代码仓库文件检索与读取
 │  └─ enterprise_sdk.py    模拟 HR / 财务 / 项目 / Wiki 系统
-├─ data/                   运行期数据（已 gitignore，可随时重建）
+├─ data/                   运行期数据
 │  ├─ db/enterprise.db     SQLite 业务库
 │  ├─ vector_db/           Chroma 持久化目录
 │  ├─ keyword_index/       Whoosh 索引
